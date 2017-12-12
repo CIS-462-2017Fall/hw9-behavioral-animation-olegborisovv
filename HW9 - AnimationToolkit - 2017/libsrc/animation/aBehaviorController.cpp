@@ -155,14 +155,43 @@ void BehaviorController::control(double deltaT)
 		m_Vdesired = mpActiveBehavior->calcDesiredVel(this);
 		m_Vdesired[1] = 0;
 
+
+
 		//  force and torque inputs are computed from vd and thetad as follows:
 		//              Velocity P controller : force = mass * Kv * (vd - v)
-		//              Heading PD controller : torque = Inertia * (-Kv * thetaDot -Kp * (thetad - theta))
+		//              Heading PD controller : torque = Inertia * (-Kv * thetaDot +Kp * (thetad - theta))
 		//  where the values of the gains Kv and Kp are different for each controller
 
 		// TODO: insert your code here to compute m_force and m_torque
 
+		m_vd = m_Vdesired.Length();
+		m_thetad = atan2(m_Vdesired[2], m_Vdesired[0]);
+		double angular_diff = m_thetad - m_state[1][1];
+		while (angular_diff > M_PI)
+		{
+			angular_diff -= 2* M_PI;
+		}
+		while (angular_diff < -M_PI)
+		{
+			angular_diff += 2* M_PI;
+		}
+		// using formulas we derrive the Kv and Kp for the controllers
+		gVelKv = 10.0;
+		gOriKv = 32.0;
+		gOriKp = 256.0;
 
+	
+
+		m_force[2] = gMass *gVelKv*(m_vd - m_VelB[2]); 
+
+		if (m_force[2] > gMaxForce) {
+			m_force[2] = gMaxForce;
+		}
+		m_torque[1] = gInertia *(-gOriKv*m_AVelB[1] + gOriKp*angular_diff);
+
+		if (m_torque[1] > gMaxTorque){
+			m_torque[1] = gMaxTorque;
+		}
 
 
 
@@ -212,7 +241,14 @@ void BehaviorController::computeDynamics(vector<vec3>& state, vector<vec3>& cont
 	// Compute the stateDot vector given the values of the current state vector and control input vector
 	// TODO: add your code here
 
-
+	//m_stateDot[0] = m_state[VEL] + force/gMass*deltaT;
+	double theta = m_state[1][1];
+	stateDot[0][0] = state[VEL][2] * cos(theta);//m_state[VEL][0] * sin(theta) + force[0] / gMass*deltaT;
+	stateDot[0][1] = 0;
+	stateDot[0][2] = state[VEL][2] * sin(theta); //m_state[VEL][2] * sin(theta) + force[2] / gMass*deltaT;
+	stateDot[1] = state[3]; //m_state[AVEL] + torque / gInertia*deltaT;
+	stateDot[2] = force / gMass;
+	stateDot[3] = torque/gInertia;
 
 
 
@@ -225,12 +261,44 @@ void BehaviorController::updateState(float deltaT, int integratorType)
 
 	// TODO: add your code here
 	
+	switch (integratorType)
+	{
+		case 0:
+		// Add your code here 
+			// usiung the same idea as in the last homework
+			for (int i = 0; i <= 3; i++) {
+				m_state[i] = m_state[i] + m_stateDot[i] * deltaT;
+			}
+			//m_state[1] = m_state[1] + m_stateDot[1] * deltaT;
+			
+
+			break;
+
+		case 1:
+		{
 
 
+		// Add your code here
+		// Prediction step
+			std::vector<vec3> x_t_p = m_state;
+			for (int i = 0; i <= 3; i++) {
+				x_t_p[i] = m_state[i] + m_stateDot[i] * deltaT;
+			}
+			std::vector<vec3> xDot_t;// = m_stateDot;
+		/*	xDot_t[0] = m_state[2] + m_stateDot[2] * deltaT;
+			xDot_t[0] = m_state[3] + m_stateDot[3] * deltaT;
+			xDot_t[1] = m_state[4] + m_stateDot[4] * deltaT;
+			xDot_t[2] = m_state[5] + m_stateDot[5] * deltaT;*/
 
-
-
-
+			computeDynamics(x_t_p, m_controlInput, xDot_t, deltaT);
+			for (int i = 0; i <= 3; i++) {
+				m_state[i] = x_t_p[i] + deltaT / 2 * (xDot_t[i] + m_stateDot[i]);
+			}
+			break;
+		}
+	}
+	//m_state[1] = m_state[1] + m_stateDot[1] * deltaT;
+	//m_state[2] = m_stateDot[0];
 
 	//  given the new values in m_state, these are the new component state values 
 	m_Pos0 = m_state[POS];
@@ -240,10 +308,16 @@ void BehaviorController::updateState(float deltaT, int integratorType)
 
 	//  Perform validation check to make sure all values are within MAX values
 	// TODO: add your code here
+	
+	if (m_VelB.Length() > gMaxSpeed){
+		m_state[VEL] = m_VelB.Normalize()*gMaxSpeed;
+	}
+	if (m_AVelB.Length() > gMaxAngularSpeed) {
+		m_state[AVEL] = m_AVelB.Normalize()*gMaxAngularSpeed;
+	}
 
-
-
-
+	m_Vel0[0] = m_VelB[2] * cos(m_state[1][1]);
+	m_Vel0[2] = m_VelB[2] * sin(m_state[1][1]);
 
 
 
